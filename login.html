@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Orbit Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="tailwind.min.css" />
+</head>
+<body>
+    <div class="bg-black flex items-center justify-center min-h-screen">
+        <div class="bg-black p-8 w-80 flex flex-col items-center">
+            <img src="icons/iconreal.png" alt="Orbit Logo" class="w-20 h-20 mb-4">
+            <h2 class="text-2xl font-bold text-indigo-700 mb-6 tracking-wide">Login to Orbit</h2>
+            <input type="email" id="email" placeholder="Email" required 
+                class="mb-3 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-400 focus:outline-none transition w-full bg-gray-50" />
+            <div class="relative w-full">
+                <input type="password" id="password" placeholder="Password" required 
+                    class="mb-4 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-400 focus:outline-none transition w-full bg-gray-50" />
+                <button type="button" id="togglePassword" attr="togglePassword" class="absolute right-3 top-2 text-gray-500 hover:text-gray-700" title="Show or hide password">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                        <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+            <button id="loginBtn"
+                class="w-full py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-pink-500 text-white font-semibold shadow-md hover:scale-105 hover:from-indigo-600 hover:to-pink-600 transition mb-2">
+                Login
+            </button>
+            <p id="status" class="text-red-600 text-sm h-5"></p>
+        </div>
+    </div>
+   
+    <script src="togglePassword.js"></script>
+    <script src="background.js"></script>
+    <script src="content.js"></script>
+</body>
+</html>

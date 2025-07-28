@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit Dashboard</title>
+  <link rel="stylesheet" href="tailwind.min.css" />
+
+  
+  <style>
+  
+
+    .beggn {
+      width: 350px;
+      height: 100vh;
+    }
+
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+  <div class="bg-black-500 beggn">
+      <!-- Header -->
+      <header class="bg-gradient-to-r from-indigo-500 to-pink-500 px-4 py-3 flex items-center justify-between">
+          <div class="text-white text-xl font-bold flex items-center gap-2">
+              🚀 <span>Orbit</span>
+          </div>
+          <button id="logoutBtn" class="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1.5 rounded-md">
+              Logout
+          </button>
+      </header>
+
+      <!-- Main Content -->
+      <main class="p-4">
+          <h2 class="text-indigo-400 text-lg font-semibold mb-3">YouTube Subscriptions</h2>
+          <div id="potentialSubscriptions" class="space-y-2">
+              <!-- JS will inject subscription items here -->
+          </div>
+      </main>
+
+   
+
+      <!-- Scripts -->
+      <script src="background.js" ></script>
+      <script src="content.js" type="module"></script>
+  </div>
+</body>
+</html>
