@@ -6,7 +6,7 @@
   "permissions": ["tabs", "webNavigation", "storage", "activeTab", "scripting", "identity", "alarms", "notifications"],
   "host_permissions": ["https://www.youtube.com/*", "<all_urls>"],
   "web_accessible_resources": [
-    {
+    { 
       "resources": ["icons/icon16.png", "icons/icon48.png", "icons/icon128.png"],
       "matches": ["<all_urls>"]
     }
