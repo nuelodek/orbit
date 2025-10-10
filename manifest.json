@@ -3,12 +3,17 @@
   "name": "Orbit by GrowSocial",
   "version": "1.0",
   "description": "Verify actions and earn rewards. Orbit keeps your engagement in sync with GrowSocial.",
-  "permissions": ["tabs", "webNavigation", "storage", "activeTab", "scripting", "identity", "alarms", "notifications"],
-  "host_permissions": ["https://www.youtube.com/*", "<all_urls>"],
+  "permissions": ["tabs", "webNavigation", "storage", "activeTab", "scripting", "alarms", "notifications", "identity"],
+  "host_permissions": ["https://www.youtube.com/*", "https://www.googleapis.com/*"],
+  "oauth2": {
+    "client_id": "1066938915757-86m8n7tr9v880q65g4onvume9mc8gj1i.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/youtube.readonly"]
+  },
+  "privacy_policy_url": "https://growsocial.com.ng/privacy-policy",
   "web_accessible_resources": [
-    { 
+    {
       "resources": ["icons/icon16.png", "icons/icon48.png", "icons/icon128.png"],
-      "matches": ["<all_urls>"]
+      "matches": ["https://www.youtube.com/*"]
     }
   ],
   "background": {
@@ -25,9 +30,9 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["https://www.youtube.com/*"],
       "js": ["content.js", "youtubeTracker.js"],
-      "run_at": "document_idle" 
+      "run_at": "document_idle"
     }
   ]
 }

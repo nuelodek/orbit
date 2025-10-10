@@ -1,79 +1,27 @@
-// content.js
+// popup.js
 
 const API_BASE_URL = 'https://growsocial.com.ng/api';
 
 // =============== DOM READY ===============
 document.addEventListener('DOMContentLoaded', () => {
-    initLoginHandler();
     initLogoutHandler();
-});
+    initAuthorizeHandler();
 
-
-// =============== LOGIN HANDLER ===============
-function initLoginHandler() {
-    const loginBtn = document.getElementById('loginBtn');
-    if (!loginBtn) return;
-
-    loginBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('email')?.value.trim();
-        const password = document.getElementById('password')?.value.trim();
-        const consent = document.getElementById('consent')?.checked;
-        const status = document.getElementById('status');
-
-        // Basic validation
-        if (!email || !password) {
-            if (status) status.textContent = 'Please fill all fields.';
-            return;
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            if (status) status.textContent = 'Please enter a valid email address.';
-            return;
-        }
-
-        if (password.length < 6) {
-            if (status) status.textContent = 'Password must be at least 6 characters long.';
-            return;
-        }
-
-        if (!consent) {
-            if (status) status.textContent = 'Please consent to data collection.';
-            return;
-        }
-
-        // Disable login button while processing
-        loginBtn.disabled = true;
-        loginBtn.textContent = 'Logging in...';
-
-        try {
-            const response = await new Promise((resolve) => {
-                chrome.runtime.sendMessage({
-                    action: 'login',
-                    data: { email, password }
-                }, resolve);
-            });
-
-            if (response.success) {
-                await new Promise((resolve) => {
-                    chrome.storage.local.set({ isLoggedIn: true, userEmail: email, dataConsent: true }, resolve);
-                });
-                window.location.href = 'popup.html';
-            } else {
-                if (status) status.textContent = response.message || 'Login failed.';
-                // Re-enable login button
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Login';
+    // Check login and fetch subscriptions
+    chrome.storage.local.get(['isLoggedIn', 'userEmail'], ({ isLoggedIn, userEmail }) => {
+        if (isLoggedIn && userEmail) {
+            checkOAuthStatus();
+            fetchPotentialSubscriptions(userEmail);
+        } else {
+            // If not logged in, perhaps show a login prompt or redirect, but for popup, maybe clear or show message
+            const container = document.getElementById('potentialSubscriptions');
+            if (container) {
+                container.innerHTML = '<p class="text-center text-gray-500 py-8">Please log in to view subscriptions.</p>';
             }
-        } catch (error) {
-            if (status) status.textContent = 'Connection error. Please try again.';
-            // Re-enable login button
-            loginBtn.disabled = false;
-            loginBtn.textContent = 'Login';
+            hideOAuthSection();
         }
     });
-}
+});
 
 // =============== LOGOUT HANDLER ===============
 function initLogoutHandler() {
@@ -85,6 +33,27 @@ function initLogoutHandler() {
             chrome.runtime.sendMessage({ action: 'logout' }, () => {
                 window.location.href = 'popup.html';
             });
+        });
+    });
+}
+
+// =============== AUTHORIZE HANDLER ===============
+function initAuthorizeHandler() {
+    const authorizeBtn = document.getElementById('authorizeBtn');
+    if (!authorizeBtn) return;
+
+    authorizeBtn.addEventListener('click', () => {
+        authorizeBtn.disabled = true;
+        authorizeBtn.textContent = 'Authorizing...';
+
+        chrome.runtime.sendMessage({ action: 'authenticate' }, (response) => {
+            if (response && response.success) {
+                checkOAuthStatus();
+            } else {
+                authorizeBtn.disabled = false;
+                authorizeBtn.textContent = 'Authorize YouTube Access';
+                alert('Authorization failed. Please try again.');
+            }
         });
     });
 }
@@ -152,3 +121,35 @@ function createSubscriptionElement(sub) {
     return wrapper;
 }
 
+// =============== OAUTH STATUS CHECK ===============
+function checkOAuthStatus() {
+    console.log('🔍 Checking OAuth status');
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (chrome.runtime.lastError || !token) {
+            console.log('❌ OAuth not authorized:', chrome.runtime.lastError);
+            showOAuthNotAuthorized();
+        } else {
+            console.log('✅ OAuth authorized');
+            showOAuthAuthorized();
+        }
+    });
+}
+
+function showOAuthAuthorized() {
+    const authorizedDiv = document.getElementById('oauthAuthorized');
+    const notAuthorizedDiv = document.getElementById('oauthNotAuthorized');
+    if (authorizedDiv) authorizedDiv.classList.remove('hidden');
+    if (notAuthorizedDiv) notAuthorizedDiv.classList.add('hidden');
+}
+
+function showOAuthNotAuthorized() {
+    const authorizedDiv = document.getElementById('oauthAuthorized');
+    const notAuthorizedDiv = document.getElementById('oauthNotAuthorized');
+    if (authorizedDiv) authorizedDiv.classList.add('hidden');
+    if (notAuthorizedDiv) notAuthorizedDiv.classList.remove('hidden');
+}
+
+function hideOAuthSection() {
+    const section = document.getElementById('oauthSection');
+    if (section) section.style.display = 'none';
+}

@@ -18,6 +18,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             handleLogout();
             break;
 
+        case 'authenticate':
+            initiateOAuth().then(() => {
+                sendResponse({ success: true });
+            }).catch(error => {
+                sendResponse({ success: false, error: error.message });
+            });
+            return true;
+
         default:
             console.warn(`Unknown message action: ${message.action}`);
             break;
@@ -53,9 +61,14 @@ function handleSubscribed(message, sender) {
 
     const timestamp = new Date().toISOString();
 
-    chrome.storage.local.get('userEmail', ({ userEmail }) => {
+    chrome.storage.local.get(['userEmail', 'dataConsent'], ({ userEmail, dataConsent }) => {
         if (!userEmail) {
-            console.warn('No userEmail found in chrome.storage.local');
+            console.warn('No user email found in storage');
+            return;
+        }
+
+        if (!dataConsent) {
+            console.warn('Data collection consent not granted');
             return;
         }
 
@@ -88,6 +101,23 @@ function handleSubscribed(message, sender) {
 // =============== HANDLE: Login ===============
 function handleLogin(message, sendResponse) {
     const { email, password } = message.data;
+
+    // Basic validation
+    if (!email || !password) {
+        sendResponse({ success: false, message: 'Email and password are required' });
+        return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        sendResponse({ success: false, message: 'Invalid email format' });
+        return;
+    }
+
+    if (password.length < 6) {
+        sendResponse({ success: false, message: 'Password must be at least 6 characters' });
+        return;
+    }
 
     fetch('https://growsocial.com.ng/growlogin.php', {
         method: 'POST',
@@ -145,6 +175,180 @@ function handleLogout() {
         console.log('🔒 Logged out and storage cleared.');
     });
 }
+// =============== OAUTH 2.0 FUNCTIONS ===============
+
+function getAuthToken(interactive = false) {
+  console.log(`🔑 Getting auth token, interactive: ${interactive}`);
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive }, (token) => {
+      if (chrome.runtime.lastError) {
+        console.error('❌ Auth token error:', chrome.runtime.lastError);
+        reject(chrome.runtime.lastError);
+      } else {
+        console.log('✅ Auth token obtained');
+        resolve(token);
+      }
+    });
+  });
+}
+
+// =============== ALARM LISTENER ===============
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'pollSubscriptions') {
+    pollYouTubeSubscriptions();
+  }
+});
+
+function removeCachedAuthToken() {
+  return new Promise((resolve) => {
+    chrome.identity.getAuthToken({}, (token) => {
+      if (token) {
+        chrome.identity.removeCachedAuthToken({ token }, () => {
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+// =============== YOUTUBE API FUNCTIONS ===============
+
+function fetchYouTubeSubscriptions(accessToken) {
+  return fetch('https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=50', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`YouTube API error: ${response.status}`);
+    }
+    return response.json();
+  });
+}
+
+function fetchRewardedChannels(userEmail) {
+  return fetch('https://growsocial.com.ng/api/get-rewarded-channels.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_email: userEmail })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'success') {
+      return data.channels || [];
+    } else {
+      throw new Error(data.message || 'Failed to fetch rewarded channels');
+    }
+  });
+}
+
+function compareSubscriptions(subscriptions, rewardedChannels, rewardedSubs) {
+  const newRewards = [];
+  subscriptions.forEach(sub => {
+    const channelId = sub.snippet.resourceId.channelId;
+    const isRewarded = rewardedChannels.some(rc => rc.channelId === channelId);
+    const alreadyRewarded = rewardedSubs.includes(channelId);
+    if (isRewarded && !alreadyRewarded) {
+      newRewards.push({
+        channelId,
+        channelTitle: sub.snippet.title,
+        subscribedAt: sub.snippet.publishedAt
+      });
+    }
+  });
+  return newRewards;
+}
+
+function sendSubscriptionReward(userEmail, channelData) {
+  console.log('📤 Sending subscription reward for channel:', channelData.channelId);
+  const timestamp = new Date().toISOString();
+  return fetch('https://growsocial.com.ng/api/track-subscription.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_email: userEmail,
+      event: 'subscribed',
+      timestamp,
+      url: `https://www.youtube.com/channel/${channelData.channelId}`,
+      id: channelData.channelId,
+      method: 'api'
+    })
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  })
+  .then(data => {
+    console.log('📥 Reward response:', data);
+    return data;
+  });
+}
+
+// =============== POLLING FUNCTION ===============
+
+async function pollYouTubeSubscriptions() {
+  console.log('🔄 Starting subscription poll');
+  try {
+    const { userEmail, rewardedSubs = [] } = await chrome.storage.local.get(['userEmail', 'rewardedSubs']);
+    if (!userEmail) {
+      console.log('No user email, skipping poll');
+      return;
+    }
+
+    console.log('📧 User email:', userEmail);
+    const accessToken = await getAuthToken(false);
+    const [subscriptionsData, rewardedChannels] = await Promise.all([
+      fetchYouTubeSubscriptions(accessToken),
+      fetchRewardedChannels(userEmail)
+    ]);
+
+    const subscriptions = subscriptionsData.items || [];
+    console.log(`📺 Fetched ${subscriptions.length} subscriptions`);
+    console.log(`🎁 Fetched ${rewardedChannels.length} rewarded channels`);
+    const newRewards = compareSubscriptions(subscriptions, rewardedChannels, rewardedSubs);
+    console.log(`🆕 Found ${newRewards.length} new rewards`);
+
+    for (const reward of newRewards) {
+      console.log('💰 Sending reward for channel:', reward.channelId);
+      await sendSubscriptionReward(userEmail, reward);
+      rewardedSubs.push(reward.channelId);
+    }
+
+    if (newRewards.length > 0) {
+      chrome.storage.local.set({ rewardedSubs });
+      console.log(`✅ Rewarded ${newRewards.length} new subscriptions`);
+    } else {
+      console.log('ℹ️ No new rewards this poll');
+    }
+  } catch (error) {
+    console.error('❌ Polling error:', error);
+    if (error.message.includes('OAuth')) {
+      console.log('🔄 OAuth error detected, attempting refresh');
+      // Token might be invalid, try to refresh
+      try {
+        await removeCachedAuthToken();
+        const newToken = await getAuthToken(true);
+        // Retry once
+        console.log('🔄 Retrying poll after token refresh');
+        pollYouTubeSubscriptions();
+      } catch (authError) {
+        console.error('❌ Auth refresh failed:', authError);
+      }
+    }
+  }
+}
+
+// =============== INITIATE OAUTH ===============
+
+function initiateOAuth() {
+  return getAuthToken(true);
+}
 
 // =============== HELPER: Inject YouTube Tracker ===============
 function injectTracker(tabId) {
@@ -163,6 +367,7 @@ function injectTracker(tabId) {
 chrome.runtime.onInstalled.addListener(() => {
     console.log('🚀 YouTube Tracker initialized');
     chrome.action.setPopup({ popup: 'popup.html' });
+    chrome.alarms.create('pollSubscriptions', { periodInMinutes: 5 });
 
     // Automatically inject tracker on YouTube pages
     chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
