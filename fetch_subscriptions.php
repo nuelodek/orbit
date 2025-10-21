@@ -20,9 +20,18 @@ $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 switch ($action) {
     case 'get_available_channels':
-        // Fetch available subscriptions
-        $sql = "SELECT id, email, channelname, currency, rate, channelurl, channeldescription, channelcategory, subscriptions, subscriptionneeded, amountincurred, uploaddate FROM youtube_subscriptions ORDER BY uploaddate DESC";
-        $result = $conn->query($sql);
+        // Fetch available subscriptions (exclude channels posted by current user)
+        $user_email = $_GET['user_email'] ?? '';
+        if (empty($user_email)) {
+            echo json_encode(['success' => false, 'error' => 'User email is required']);
+            break;
+        }
+
+        $sql = "SELECT id, email, channelname, currency, rate, channelurl, channeldescription, channelcategory, subscriptions, subscriptionneeded, amountincurred, uploaddate FROM youtube_subscriptions WHERE email != ? ORDER BY uploaddate DESC";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $user_email);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
         if ($result) {
             $subscriptions = [];

@@ -180,15 +180,20 @@ function handleLogin(message, sendResponse) {
     })
     .then(profileData => {
         if (profileData.success && profileData.user_data) {
-            chrome.storage.local.set({
-                orbitUser: profileData.user_data,
-                isLoggedIn: true,
-                userEmail: profileData.user_data.email
-            }, () => {
-                sendResponse({
-                    success: true,
-                    userId: profileData.user_data.id,
-                    userData: profileData.user_data
+            // Clear any existing OAuth tokens for this user session
+            chrome.identity.clearAllCachedAuthTokens(() => {
+                chrome.storage.local.set({
+                    orbitUser: profileData.user_data,
+                    isLoggedIn: true,
+                    userEmail: profileData.user_data.email,
+                    // Clear YouTube-specific data for new user
+                    rewardedSubs: []
+                }, () => {
+                    sendResponse({
+                        success: true,
+                        userId: profileData.user_data.id,
+                        userData: profileData.user_data
+                    });
                 });
             });
         } else {
@@ -203,10 +208,14 @@ function handleLogin(message, sendResponse) {
 
 // =============== HANDLE: Logout ===============
 function handleLogout() {
-    chrome.storage.local.clear(() => {
-        chrome.action.setPopup({ popup: 'login.html' });
-        // NOTE: window.close() does NOT work in background scripts
-        console.log('🔒 Logged out and storage cleared.');
+    // Clear all cached OAuth tokens
+    chrome.identity.clearAllCachedAuthTokens(() => {
+        // Clear extension storage
+        chrome.storage.local.clear(() => {
+            chrome.action.setPopup({ popup: 'login.html' });
+            // NOTE: window.close() does NOT work in background scripts
+            console.log('🔒 Logged out, OAuth tokens cleared, and storage cleared.');
+        });
     });
 }
 

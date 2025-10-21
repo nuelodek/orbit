@@ -12,9 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.get(['isLoggedIn', 'userEmail'], ({ isLoggedIn, userEmail }) => {
         if (isLoggedIn && userEmail) {
             checkOAuthStatus();
-            fetchMySubscriptions(userEmail);
-            fetchAvailableChannels(userEmail);
-            fetchRewards(userEmail);
+            updateAllTabTitles();
         } else {
             // If not logged in, show message in all tabs
             showLoginRequiredMessage();
@@ -31,7 +29,7 @@ function initLogoutHandler() {
     logoutBtn.addEventListener('click', () => {
         chrome.storage.local.clear(() => {
             chrome.runtime.sendMessage({ action: 'logout' }, () => {
-                window.location.href = 'popup.html';
+                window.location.reload();
             });
         });
     });
@@ -108,17 +106,17 @@ function fetchMySubscriptions(email) {
                 });
             }
             // Update tab title with count
-            updateTabTitle('tab-subscriptions', 'My Subscriptions', response.subscriptions.length);
+            updateTabTitle('tab-subscriptions', 'Subscriptions', response.subscriptions.length);
         } else {
             container.innerHTML = '<p class="text-center text-red-500 py-8">Failed to load subscriptions. Please check YouTube authorization.</p>';
-            updateTabTitle('tab-subscriptions', 'My Subscriptions', 0);
+            updateTabTitle('tab-subscriptions', 'Subscriptions', 0);
         }
     });
 }
 
 // =============== FETCH AVAILABLE CHANNELS ===============
 function fetchAvailableChannels(email) {
-    fetch(`${API_BASE_URL}/fetch_subscriptions.php?action=get_available_channels`)
+    fetch(`${API_BASE_URL}/fetch_subscriptions.php?action=get_available_channels&user_email=${encodeURIComponent(email)}`)
         .then(response => response.json())
         .then(data => {
             const container = document.getElementById('availableChannels');
@@ -129,18 +127,18 @@ function fetchAvailableChannels(email) {
             if (data.success && Array.isArray(data.subscriptions)) {
                 if (data.subscriptions.length === 0) {
                     container.innerHTML = '<p class="text-center text-gray-500 py-8">No channels available</p>';
-                    updateTabTitle('tab-available', 'Available Channels', 0);
+                    updateTabTitle('tab-available', 'Channels', 0);
                 } else {
                     data.subscriptions.forEach(sub => {
                         const subEl = createAvailableChannelElement(sub);
                         container.appendChild(subEl);
                     });
-                    updateTabTitle('tab-available', 'Available Channels', data.subscriptions.length);
+                    updateTabTitle('tab-available', 'Channels', data.subscriptions.length);
                 }
             } else {
                 container.innerHTML = '<p class="text-center text-red-500 py-8">Failed to load channels. Please try again later.</p>';
                 console.warn('Unexpected response:', data);
-                updateTabTitle('tab-available', 'Available Channels', 0);
+                updateTabTitle('tab-available', 'Channels', 0);
             }
         })
         .catch(err => {
@@ -149,7 +147,7 @@ function fetchAvailableChannels(email) {
                 container.innerHTML = '<p class="text-center text-red-500 py-8">Failed to load channels. Please try again later.</p>';
             }
             console.error('Fetch failed:', err);
-            updateTabTitle('tab-available', 'Available Channels', 0);
+            updateTabTitle('tab-available', 'Channels', 0);
         });
 }
 
@@ -348,4 +346,16 @@ function updateTabTitle(tabId, baseTitle, count) {
             tab.textContent = baseTitle;
         }
     }
+}
+
+// =============== UPDATE TAB TITLES BASED ON CURRENT STATE ===============
+function updateAllTabTitles() {
+    chrome.storage.local.get(['isLoggedIn', 'userEmail'], ({ isLoggedIn, userEmail }) => {
+        if (isLoggedIn && userEmail) {
+            // Update counts for all tabs
+            fetchMySubscriptions(userEmail);
+            fetchAvailableChannels(userEmail);
+            fetchRewards(userEmail);
+        }
+    });
 }
