@@ -59,11 +59,39 @@
           </div>
       </div>
 
+      <!-- Tab Navigation -->
+      <div class="bg-gray-800 px-4 py-2 border-b border-gray-700">
+          <div class="flex space-x-1">
+              <button id="tab-subscriptions" class="tab-btn active bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">My Subscriptions</button>
+              <button id="tab-available" class="tab-btn bg-gray-600 text-gray-300 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Available Channels</button>
+              <button id="tab-rewards" class="tab-btn bg-gray-600 text-gray-300 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-700">Rewards</button>
+          </div>
+      </div>
+
       <!-- Main Content -->
       <main class="p-4">
-          <h2 class="text-indigo-400 text-lg font-semibold mb-3">YouTube Subscriptions</h2>
-          <div id="potentialSubscriptions" class="space-y-2">
-              <!-- JS will inject subscription items here -->
+          <!-- My Subscriptions Tab -->
+          <div id="tab-content-subscriptions" class="tab-content" style="display: block;">
+              <h2 class="text-indigo-400 text-lg font-semibold mb-3">My YouTube Subscriptions</h2>
+              <div id="mySubscriptions" class="space-y-2">
+                  <p class="text-center text-gray-500 py-8">Loading your subscriptions...</p>
+              </div>
+          </div>
+
+          <!-- Available Channels Tab -->
+          <div id="tab-content-available" class="tab-content" style="display: none;">
+              <h2 class="text-indigo-400 text-lg font-semibold mb-3">Available Channels</h2>
+              <div id="availableChannels" class="space-y-2">
+                  <p class="text-center text-gray-500 py-8">Loading available channels...</p>
+              </div>
+          </div>
+
+          <!-- Rewards Tab -->
+          <div id="tab-content-rewards" class="tab-content" style="display: none;">
+              <h2 class="text-indigo-400 text-lg font-semibold mb-3">My Rewards</h2>
+              <div id="rewardsContent" class="space-y-2">
+                  <p class="text-center text-gray-500 py-8">Loading rewards...</p>
+              </div>
           </div>
       </main>
 

@@ -26,6 +26,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             return true;
 
+        case 'getMySubscriptions':
+            handleGetMySubscriptions(sendResponse);
+            return true;
+
         default:
             console.warn(`Unknown message action: ${message.action}`);
             break;
@@ -72,28 +76,58 @@ function handleSubscribed(message, sender) {
             return;
         }
 
-        fetch('https://growsocial.com.ng/api/track-subscription.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_email: userEmail,
-                event: 'subscribed',
-                timestamp,
-                url: message.url,
-                id: message.channelId
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success' && sender.tab?.id) {
-                chrome.tabs.sendMessage(sender.tab.id, {
-                    action: 'subscriptionTracked',
-                    success: true
+        // First, get YouTube subscription data to verify
+        getAuthToken(false).then(accessToken => {
+            return fetchYouTubeSubscriptions(accessToken);
+        }).then(youtubeData => {
+            const subscriptions = youtubeData.items || [];
+            const channelId = message.channelId;
+
+            // Check if user is actually subscribed to this channel
+            const isSubscribed = subscriptions.some(sub => sub.snippet.resourceId.channelId === channelId);
+
+            if (isSubscribed) {
+                // Get user's YouTube account info
+                return fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                })
+                .then(response => response.json())
+                .then(channelData => {
+                    const youtubeAccount = channelData.items?.[0]?.snippet?.title || '';
+
+                    // Send to custom endpoint for tracking
+                    fetch('https://growsocial.com.ng/api/fetch_subscriptions.php?action=track_subscription', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_email: userEmail,
+                            subscription_id: message.subscriptionId,
+                            poster_email: message.posterEmail,
+                            rate: message.rate,
+                            currency: message.currency,
+                            youtube_account: youtubeAccount
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && sender.tab?.id) {
+                            chrome.tabs.sendMessage(sender.tab.id, {
+                                action: 'subscriptionTracked',
+                                success: true
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Tracking error:', error);
+                    });
                 });
+            } else {
+                console.warn('User is not actually subscribed to this channel on YouTube');
             }
-        })
-        .catch(error => {
-            console.error('Tracking error:', error);
+        }).catch(error => {
+            console.error('Failed to verify YouTube subscription:', error);
         });
     });
 }
@@ -175,6 +209,27 @@ function handleLogout() {
         console.log('🔒 Logged out and storage cleared.');
     });
 }
+
+// =============== HANDLE: Get My Subscriptions ===============
+function handleGetMySubscriptions(sendResponse) {
+    getAuthToken(false).then(accessToken => {
+        return fetchYouTubeSubscriptions(accessToken);
+    }).then(data => {
+        const subscriptions = data.items || [];
+        // Transform to a simpler format for the popup
+        const formattedSubscriptions = subscriptions.map(sub => ({
+            channelId: sub.snippet.resourceId.channelId,
+            title: sub.snippet.title,
+            description: sub.snippet.description,
+            subscribedAt: sub.snippet.publishedAt,
+            thumbnails: sub.snippet.thumbnails
+        }));
+        sendResponse({ success: true, subscriptions: formattedSubscriptions });
+    }).catch(error => {
+        console.error('Failed to get subscriptions:', error);
+        sendResponse({ success: false, error: error.message });
+    });
+}
 // =============== OAUTH 2.0 FUNCTIONS ===============
 
 function getAuthToken(interactive = false) {
@@ -231,10 +286,10 @@ function fetchYouTubeSubscriptions(accessToken) {
 }
 
 function fetchRewardedChannels(userEmail) {
-  return fetch('https://growsocial.com.ng/api/get-rewarded-channels.php', {
+  return fetch('https://growsocial.com.ng/api/fetch_subscriptions.php?action=get_rewarded_channels', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_email: userEmail })
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `user_email=${encodeURIComponent(userEmail)}`
   })
   .then(response => response.json())
   .then(data => {
