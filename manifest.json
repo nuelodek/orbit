@@ -9,7 +9,6 @@
     "client_id": "1066938915757-86m8n7tr9v880q65g4onvume9mc8gj1i.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/youtube.readonly"]
   },
-  "privacy_policy_url": "https://growsocial.com.ng/privacy-policy",
   "web_accessible_resources": [
     {
       "resources": ["icons/icon16.png", "icons/icon48.png", "icons/icon128.png"],
