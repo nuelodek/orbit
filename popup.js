@@ -6,7 +6,9 @@ const API_BASE_URL = 'https://growsocial.com.ng/api';
 document.addEventListener('DOMContentLoaded', () => {
     initLogoutHandler();
     initAuthorizeHandler();
+    initLinkYouTubeHandler();
     initTabHandlers();
+    initRefreshHandlers();
 
     // Check login and fetch data
     chrome.storage.local.get(['isLoggedIn', 'userEmail'], ({ isLoggedIn, userEmail }) => {
@@ -27,11 +29,21 @@ function initLogoutHandler() {
     if (!logoutBtn) return;
 
     logoutBtn.addEventListener('click', () => {
+        // Disable button to prevent multiple clicks
+        logoutBtn.disabled = true;
+        logoutBtn.textContent = 'Logging out...';
+
         chrome.storage.local.clear(() => {
-            chrome.runtime.sendMessage({ action: 'logout' }, () => {
-                window.location.reload();
-            });
+            chrome.runtime.sendMessage({ action: 'logout' });
         });
+    });
+
+    // Listen for logout completion
+    chrome.runtime.onMessage.addListener((message) => {
+        if (message.action === 'logoutComplete') {
+            // Force redirect to login page immediately
+            window.location.href = 'login.html';
+        }
     });
 }
 
@@ -51,6 +63,27 @@ function initAuthorizeHandler() {
                 authorizeBtn.disabled = false;
                 authorizeBtn.textContent = 'Authorize YouTube Access';
                 alert('Authorization failed. Please try again.');
+            }
+        });
+    });
+}
+
+// =============== LINK YOUTUBE HANDLER ===============
+function initLinkYouTubeHandler() {
+    const linkBtn = document.getElementById('linkYouTubeBtn');
+    if (!linkBtn) return;
+
+    linkBtn.addEventListener('click', () => {
+        linkBtn.disabled = true;
+        linkBtn.textContent = 'Linking...';
+
+        chrome.runtime.sendMessage({ action: 'authenticate' }, (response) => {
+            if (response && response.success) {
+                checkOAuthStatus();
+            } else {
+                linkBtn.disabled = false;
+                linkBtn.textContent = 'Link YouTube Account';
+                alert('Failed to link YouTube account. Please try again.');
             }
         });
     });
@@ -108,7 +141,11 @@ function fetchMySubscriptions(email) {
             // Update tab title with count
             updateTabTitle('tab-subscriptions', 'Subscriptions', response.subscriptions.length);
         } else {
-            container.innerHTML = '<p class="text-center text-red-500 py-8">Failed to load subscriptions. Please check YouTube authorization.</p>';
+            if (response.error && response.error.includes('not linked')) {
+                container.innerHTML = '<p class="text-center text-orange-500 py-8">YouTube account not linked. Please link your YouTube account to view subscriptions.</p>';
+            } else {
+                container.innerHTML = '<p class="text-center text-red-500 py-8">Failed to load subscriptions. Please try again later.</p>';
+            }
             updateTabTitle('tab-subscriptions', 'Subscriptions', 0);
         }
     });
@@ -247,7 +284,10 @@ function createAvailableChannelElement(sub) {
     `;
 
     const subscribeBtn = wrapper.querySelector('.subscribe-btn');
-    subscribeBtn?.addEventListener('click', () => {
+    subscribeBtn?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
         window.open(sub.channel_url, '_blank');
         alert(`You are now subscribed to ${sub.channel_name}!`);
         chrome.runtime.sendMessage({
@@ -306,13 +346,34 @@ function showLoginRequiredMessage() {
 // =============== OAUTH STATUS CHECK ===============
 function checkOAuthStatus() {
     console.log('🔍 Checking OAuth status');
-    chrome.identity.getAuthToken({ interactive: false }, (token) => {
-        if (chrome.runtime.lastError || !token) {
-            console.log('❌ OAuth not authorized:', chrome.runtime.lastError);
-            showOAuthNotAuthorized();
+
+    // First check if user has linked Google account in database
+    chrome.storage.local.get(['userEmail'], ({ userEmail }) => {
+        if (userEmail) {
+            fetch(`https://growsocial.com.ng/api/get_google_tokens.php?user_email=${encodeURIComponent(userEmail)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.data && data.data.google_account_linked) {
+                        // User has linked account, check if token is still valid
+                        if (data.data.token_valid) {
+                            console.log('✅ User has valid linked Google account');
+                            showOAuthAuthorized();
+                        } else {
+                            console.log('⚠️ User has linked account but token expired');
+                            showOAuthNotLinked();
+                        }
+                    } else {
+                        // User hasn't linked account yet
+                        console.log('📋 User has not linked Google account');
+                        showOAuthNotLinked();
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to check Google tokens:', error);
+                    showOAuthNotLinked();
+                });
         } else {
-            console.log('✅ OAuth authorized');
-            showOAuthAuthorized();
+            showOAuthNotAuthorized();
         }
     });
 }
@@ -320,8 +381,50 @@ function checkOAuthStatus() {
 function showOAuthAuthorized() {
     const authorizedDiv = document.getElementById('oauthAuthorized');
     const notAuthorizedDiv = document.getElementById('oauthNotAuthorized');
+    const notLinkedDiv = document.getElementById('oauthNotLinked');
+
     if (authorizedDiv) authorizedDiv.classList.remove('hidden');
     if (notAuthorizedDiv) notAuthorizedDiv.classList.add('hidden');
+    if (notLinkedDiv) notLinkedDiv.classList.add('hidden');
+
+    // Always fetch fresh account info from database-backed tokens
+    fetchYouTubeAccountInfo();
+}
+
+function showOAuthNotLinked() {
+    const authorizedDiv = document.getElementById('oauthAuthorized');
+    const notAuthorizedDiv = document.getElementById('oauthNotAuthorized');
+    const notLinkedDiv = document.getElementById('oauthNotLinked');
+
+    if (authorizedDiv) authorizedDiv.classList.add('hidden');
+    if (notAuthorizedDiv) notAuthorizedDiv.classList.add('hidden');
+    if (notLinkedDiv) notLinkedDiv.classList.remove('hidden');
+}
+
+function fetchYouTubeAccountInfo() {
+    const accountInfoDiv = document.getElementById('youtubeAccountInfo');
+    if (!accountInfoDiv) return;
+
+    // Get current user email and fetch their stored channel name
+    chrome.storage.local.get(['userEmail'], ({ userEmail }) => {
+        if (userEmail) {
+            fetch(`https://growsocial.com.ng/api/get_google_tokens.php?user_email=${encodeURIComponent(userEmail)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.data && data.data.youtube_channel_name) {
+                        accountInfoDiv.textContent = `Account: ${data.data.youtube_channel_name}`;
+                    } else {
+                        accountInfoDiv.textContent = 'Account: Not linked';
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to fetch account info:', error);
+                    accountInfoDiv.textContent = 'Account: Unable to load';
+                });
+        } else {
+            accountInfoDiv.textContent = 'Account: Not logged in';
+        }
+    });
 }
 
 function showOAuthNotAuthorized() {
@@ -345,6 +448,43 @@ function updateTabTitle(tabId, baseTitle, count) {
         } else {
             tab.textContent = baseTitle;
         }
+    }
+}
+
+// =============== REFRESH HANDLERS ===============
+function initRefreshHandlers() {
+    const refreshSubscriptionsBtn = document.getElementById('refreshSubscriptions');
+    const refreshAvailableBtn = document.getElementById('refreshAvailable');
+    const refreshRewardsBtn = document.getElementById('refreshRewards');
+
+    if (refreshSubscriptionsBtn) {
+        refreshSubscriptionsBtn.addEventListener('click', () => {
+            chrome.storage.local.get(['isLoggedIn', 'userEmail'], ({ isLoggedIn, userEmail }) => {
+                if (isLoggedIn && userEmail) {
+                    fetchMySubscriptions(userEmail);
+                }
+            });
+        });
+    }
+
+    if (refreshAvailableBtn) {
+        refreshAvailableBtn.addEventListener('click', () => {
+            chrome.storage.local.get(['isLoggedIn', 'userEmail'], ({ isLoggedIn, userEmail }) => {
+                if (isLoggedIn && userEmail) {
+                    fetchAvailableChannels(userEmail);
+                }
+            });
+        });
+    }
+
+    if (refreshRewardsBtn) {
+        refreshRewardsBtn.addEventListener('click', () => {
+            chrome.storage.local.get(['isLoggedIn', 'userEmail'], ({ isLoggedIn, userEmail }) => {
+                if (isLoggedIn && userEmail) {
+                    fetchRewards(userEmail);
+                }
+            });
+        });
     }
 }
 
