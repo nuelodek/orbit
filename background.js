@@ -195,7 +195,7 @@ function handleLogin(message, sendResponse) {
                 // Fetch full profile
                 return fetch('https://growsocial.com.ng/api/fetchprofile.php', {
                     method: 'POST',
-                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email })
                 });
             } else {
@@ -214,23 +214,21 @@ function handleLogin(message, sendResponse) {
         }
         return profileResponse.json();
     })
-    .then(profileResponse => {
-        console.log('Profile response type:', typeof profileResponse, 'has status:', 'status' in profileResponse);
-        if (profileResponse && typeof profileResponse === 'object' && 'status' in profileResponse) {
-            console.log('Profile response is already parsed JSON');
-            return profileResponse;
+    .then(profileData => {
+        console.log('Profile response:', profileData);
+        if (!profileData || typeof profileData !== 'object') {
+            throw new Error('Invalid profile response format');
         }
-        console.log('Profile response needs parsing, status:', profileResponse.status, 'ok:', profileResponse.ok);
-        if (!profileResponse.ok) {
-            throw new Error(`Profile fetch error: ${profileResponse.status}`);
-        }
-        return profileResponse.json(); // Parse as JSON
+        return profileData;
     })
     .then(profileData => {
+        console.log('Profile data received:', profileData);
         if (profileData.success && profileData.user_data) {
+            console.log('✅ Profile fetch successful, user_data present');
             // Check if user has Google OAuth tokens stored
             return fetch(`https://growsocial.com.ng/api/get_google_tokens.php?user_email=${encodeURIComponent(email)}`)
                 .then(tokenResponse => {
+                    console.log('Token response status:', tokenResponse.status);
                     if (!tokenResponse.ok) {
                         console.log('⚠️ Token check failed, proceeding without tokens');
                         return { success: false };
@@ -246,6 +244,7 @@ function handleLogin(message, sendResponse) {
                     return { profileData, tokenData: { success: false } };
                 });
         } else {
+            console.error('❌ Profile fetch failed:', profileData);
             throw new Error(profileData.message || 'Failed to fetch profile data');
         }
     })
@@ -410,33 +409,37 @@ function getAuthToken(interactive = false) {
     });
   });
 }
+}
 
 function getChromeAuthToken(interactive, resolve, reject) {
   const timeout = setTimeout(() => {
     reject(new Error('Auth token request timeout'));
   }, interactive ? 30000 : 10000);
 
-  chrome.identity.getAuthToken({ interactive }, (token) => {
-    clearTimeout(timeout);
-    if (chrome.runtime.lastError) {
-      console.error('❌ Auth token error:', chrome.runtime.lastError);
-      reject(chrome.runtime.lastError);
-    } else {
-      console.log('✅ Auth token obtained from Chrome');
-
-      // If this is an interactive request (user just authorized), store the token
-      if (interactive) {
-        chrome.storage.local.get(['userEmail'], ({ userEmail }) => {
-          if (userEmail) {
-            // Store this fresh token in database
-            storeFreshToken(token, userEmail);
-          }
-          resolve(token);
-        });
+  // Clear any cached tokens first to force account selection
+  chrome.identity.clearAllCachedAuthTokens(() => {
+    chrome.identity.getAuthToken({ interactive }, (token) => {
+      clearTimeout(timeout);
+      if (chrome.runtime.lastError) {
+        console.error('❌ Auth token error:', chrome.runtime.lastError);
+        reject(chrome.runtime.lastError);
       } else {
-        resolve(token);
+        console.log('✅ Auth token obtained from Chrome');
+
+        // If this is an interactive request (user just authorized), store the token
+        if (interactive) {
+          chrome.storage.local.get(['userEmail'], ({ userEmail }) => {
+            if (userEmail) {
+              // Store this fresh token in database
+              storeFreshToken(token, userEmail);
+            }
+            resolve(token);
+          });
+        } else {
+          resolve(token);
+        }
       }
-    }
+    });
   });
 }
 
@@ -672,7 +675,10 @@ async function pollYouTubeSubscriptions() {
 // =============== INITIATE OAUTH ===============
 
 function initiateOAuth() {
-  return getAuthToken(true).then(accessToken => {
+  console.log('🔐 Starting OAuth flow - clearing cached tokens first');
+  // Clear any existing cached tokens to force account selection
+  return chrome.identity.clearAllCachedAuthTokens(() => {
+    return getAuthToken(true).then(accessToken => {
     // After successful OAuth, get user info and store tokens
     return Promise.all([
       // Get YouTube channel info
@@ -730,8 +736,7 @@ function initiateOAuth() {
         });
       });
     });
-  });
-}
+  }
 
 // =============== HELPER: Inject YouTube Tracker ===============
 function injectTracker(tabId) {
